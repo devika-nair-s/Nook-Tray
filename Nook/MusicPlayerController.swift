@@ -505,18 +505,53 @@ class MusicPlayerController: ObservableObject {
         var artURL: String? = nil
         if let videoID = extractYouTubeVideoID(from: tabURL) {
             artURL = "https://i.ytimg.com/vi/\(videoID)/mqdefault.jpg"
+            
+            // If tabTitle is just generic "YouTube Music", fetch oEmbed title asynchronously
+            if title == "YouTube Music" || title.isEmpty {
+                fetchOEmbedMetadata(for: videoID)
+            }
         }
+        
+        // Use previous duration/elapsed if tracking same title
+        let currentDur = (self.songTitle == title && self.duration > 0) ? self.duration : (self.duration > 0 ? self.duration : 210.0)
+        let currentPos = (self.songTitle == title) ? self.elapsedTime : 0.0
         
         return MediaCandidate(
             app: appName,
             songTitle: title,
             artist: artist,
             isPlaying: isAudible,
-            elapsed: 0,
-            duration: 0,
+            elapsed: currentPos,
+            duration: currentDur,
             artworkURL: artURL,
             artworkImage: nil
         )
+    }
+    
+    private func fetchOEmbedMetadata(for videoID: String) {
+        guard let url = URL(string: "https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=\(videoID)&format=json") else { return }
+        URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+            guard let self = self, let data = data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let fullTitle = json["title"] as? String else { return }
+            
+            var title = fullTitle
+            var artist = (json["author_name"] as? String) ?? "YouTube Music"
+            if fullTitle.contains(" - ") {
+                let parts = fullTitle.components(separatedBy: " - ")
+                if parts.count >= 2 {
+                    artist = parts[0].trimmingCharacters(in: .whitespaces)
+                    title = parts[1].trimmingCharacters(in: .whitespaces)
+                }
+            }
+            
+            DispatchQueue.main.async {
+                if self.songTitle == "YouTube Music" || self.songTitle.isEmpty {
+                    self.songTitle = title
+                    self.artist = artist
+                }
+            }
+        }.resume()
     }
     
     private func getArtworkImageFromMusic() -> NSImage? {
