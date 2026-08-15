@@ -38,7 +38,7 @@ enum AppAccentColor: String, CaseIterable, Identifiable {
     }
     
     func surfaceColor(isDark: Bool) -> Color {
-        return isDark ? Color(red: 0.10, green: 0.10, blue: 0.12) : Color.white
+        return isDark ? Color.black : Color.white
     }
     
     func controlBackground(isDark: Bool) -> Color {
