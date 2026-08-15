@@ -89,7 +89,7 @@ struct NotchIslandCollapsedView: View {
                     }
                 }
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 6)
         }
         .clipShape(TrayShape(cornerRadius: 8))
         .contentShape(Rectangle())
@@ -210,8 +210,8 @@ struct NookHoverBarView: View {
                     Spacer(minLength: 0)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
         }
         .clipShape(TrayShape(cornerRadius: 12))
         .contentShape(Rectangle())
@@ -396,8 +396,8 @@ struct NookUnifiedBarView: View {
                     }
                     Spacer()
                 }
-                .padding(.leading, 28)
-                .padding(.top, 14)
+                .padding(.leading, 26)
+                .padding(.top, 12)
             } else {
                 HStack(spacing: 8) {
                     if let photo = appPhoto {
@@ -416,7 +416,7 @@ struct NookUnifiedBarView: View {
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .foregroundColor(settings.currentPrimaryColor)
                 }
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 12)
                 .contentShape(Rectangle())
                 .onTapGesture {
                     onExpand()
