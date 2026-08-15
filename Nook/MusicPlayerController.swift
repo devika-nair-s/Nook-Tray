@@ -61,41 +61,358 @@ class MusicPlayerController: ObservableObject {
         }
     }
     
+    private struct MediaCandidate {
+        let app: String
+        let songTitle: String
+        let artist: String
+        let isPlaying: Bool
+        let elapsed: Double
+        let duration: Double
+        let artworkURL: String?
+        let artworkImage: NSImage?
+    }
+    
     private func updateNowPlayingInfo() {
-        let foundMedia = trySpotifyWeb() || trySpotify() || tryMusic() || tryBrowsers()
-        if !foundMedia {
+        var candidates: [MediaCandidate] = []
+        
+        // 1. Check native Spotify Desktop
+        if let cand = checkSpotifyCandidate() {
+            candidates.append(cand)
+        }
+        
+        // 2. Check native Apple Music
+        if let cand = checkMusicCandidate() {
+            candidates.append(cand)
+        }
+        
+        // 3. Check Spotify Web in Chrome/Brave
+        if let cand = checkSpotifyWebCandidate() {
+            candidates.append(cand)
+        }
+        
+        // 4. Check YouTube / YouTube Music in Chrome/Brave
+        if let cand = checkYouTubeCandidate() {
+            candidates.append(cand)
+        }
+        
+        // 5. Check other browser tabs in Safari, Chrome, Brave
+        if let cand = checkBrowserTabsCandidate() {
+            candidates.append(cand)
+        }
+        
+        // Prioritize whichever candidate is ACTUALLY PLAYING right now!
+        if let activePlaying = candidates.first(where: { $0.isPlaying }) {
+            applyCandidate(activePlaying)
+        } else if let firstPaused = candidates.first(where: { !$0.songTitle.isEmpty }) {
+            // If all are paused, display the most recent or first available media in paused state
+            applyCandidate(firstPaused)
+        } else {
             DispatchQueue.main.async { [weak self] in
                 self?.isPlaying = false
             }
         }
     }
     
-    private func tryBrowsers() -> Bool {
-        // Try Safari first, then Chrome, then Brave, then fallback to any active media
-        if trySafari() { return true }
-        if tryChrome() { return true }
-        if tryBrave() { return true }
-        // Try to detect any playing media
-        if tryAnyChrome() { return true }
-        return false
+    private func applyCandidate(_ cand: MediaCandidate) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.currentApp = cand.app
+            self.songTitle = cand.songTitle
+            self.artist = cand.artist.isEmpty ? "Unknown Artist" : cand.artist
+            self.isPlaying = cand.isPlaying
+            
+            if cand.duration > 0 {
+                self.duration = cand.duration
+                self.elapsedTime = cand.elapsed
+                self.lastKnownPosition = cand.elapsed
+                self.lastUpdateTime = Date()
+                self.playbackProgress = min(1.0, max(0.0, cand.elapsed / cand.duration))
+            } else {
+                self.duration = 0
+                self.elapsedTime = 0
+                self.playbackProgress = 0
+            }
+            
+            if let img = cand.artworkImage {
+                self.albumArtwork = img
+            } else if let artStr = cand.artworkURL, !artStr.isEmpty, let artUrl = URL(string: artStr) {
+                self.downloadArtwork(from: artUrl)
+            } else if cand.app != "Music" && cand.artworkURL == nil {
+                // Try iTunes search fallback if no direct artwork
+                if let videoID = self.extractYouTubeVideoID(from: cand.artist) {
+                    if let thumbURL = URL(string: "https://i.ytimg.com/vi/\(videoID)/mqdefault.jpg") {
+                        self.downloadArtwork(from: thumbURL)
+                    }
+                }
+            }
+        }
     }
     
-    private func trySafari() -> Bool {
+    // MARK: - Candidate Checkers
+    private func checkSpotifyCandidate() -> MediaCandidate? {
         let script = """
         tell application "System Events"
+            set spotifyRunning to (name of processes) contains "Spotify"
+        end tell
+        
+        if spotifyRunning then
+            tell application "Spotify"
+                if player state is playing or player state is paused then
+                    set trackName to name of current track
+                    set artistName to artist of current track
+                    set isPlaying to (player state is playing)
+                    set trackDuration to duration of current track
+                    set trackPosition to player position
+                    return trackName & "|||" & artistName & "|||" & (isPlaying as text) & "|||" & trackDuration & "|||" & trackPosition & "|||SPOTIFY"
+                end if
+            end tell
+        end if
+        return "NOT_PLAYING"
+        """
+        
+        guard let appleScript = NSAppleScript(source: script) else { return nil }
+        var error: NSDictionary?
+        let result = appleScript.executeAndReturnError(&error)
+        guard error == nil, let str = result.stringValue, str != "NOT_PLAYING" else { return nil }
+        
+        let parts = str.components(separatedBy: "|||")
+        guard parts.count >= 5, !parts[0].isEmpty else { return nil }
+        
+        let dur = (Double(parts[3]) ?? 0) / 1000.0
+        let pos = Double(parts[4]) ?? 0
+        let isPlaying = parts[2] == "true"
+        
+        return MediaCandidate(
+            app: "Spotify",
+            songTitle: parts[0],
+            artist: parts[1],
+            isPlaying: isPlaying,
+            elapsed: pos,
+            duration: dur,
+            artworkURL: nil,
+            artworkImage: nil
+        )
+    }
+    
+    private func checkMusicCandidate() -> MediaCandidate? {
+        let script = """
+        tell application "System Events"
+            set musicRunning to (name of processes) contains "Music"
+        end tell
+        
+        if musicRunning then
+            tell application "Music"
+                if player state is playing or player state is paused then
+                    set trackName to name of current track
+                    set artistName to artist of current track
+                    set isPlaying to (player state is playing)
+                    set trackDuration to duration of current track
+                    set trackPosition to player position
+                    return trackName & "|||" & artistName & "|||" & (isPlaying as text) & "|||" & trackDuration & "|||" & trackPosition & "|||MUSIC"
+                end if
+            end tell
+        end if
+        return "NOT_PLAYING"
+        """
+        
+        guard let appleScript = NSAppleScript(source: script) else { return nil }
+        var error: NSDictionary?
+        let result = appleScript.executeAndReturnError(&error)
+        guard error == nil, let str = result.stringValue, str != "NOT_PLAYING" else { return nil }
+        
+        let parts = str.components(separatedBy: "|||")
+        guard parts.count >= 5, !parts[0].isEmpty else { return nil }
+        
+        let dur = Double(parts[3]) ?? 0
+        let pos = Double(parts[4]) ?? 0
+        let isPlaying = parts[2] == "true"
+        
+        return MediaCandidate(
+            app: "Music",
+            songTitle: parts[0],
+            artist: parts[1],
+            isPlaying: isPlaying,
+            elapsed: pos,
+            duration: dur,
+            artworkURL: nil,
+            artworkImage: getArtworkImageFromMusic()
+        )
+    }
+    
+    private func checkSpotifyWebCandidate() -> MediaCandidate? {
+        let jsScript = """
+        (function() {
+            const text = (element) => (element && element.textContent || '').trim();
+            const first = (selectors, root = document) => {
+                for (const selector of selectors) {
+                    const match = root.querySelector(selector);
+                    if (match) return match;
+                }
+                return null;
+            };
+            const all = (selectors, root = document) =>
+                selectors.flatMap((selector) => Array.from(root.querySelectorAll(selector)));
+
+            function timeToSeconds(timeStr) {
+                if (!timeStr) return 0;
+                const parts = timeStr.split(':').map(Number);
+                if (parts.length === 2) return parts[0] * 60 + parts[1];
+                if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+                return 0;
+            }
+
+            const widget = first([
+                '[data-testid="now-playing-widget"]',
+                '[data-testid="now-playing-bar"]',
+                'footer'
+            ]) || document;
+
+            const playButton = first([
+                '[data-testid="control-button-playpause"]',
+                'button[aria-label*="Pause"]',
+                'button[aria-label*="Play"]',
+                'button[aria-label*="Resume"]'
+            ]);
+            const playLabel = (playButton && playButton.getAttribute('aria-label') || '').toLowerCase();
+            const isPlaying = playLabel.includes('pause');
+
+            const titleElement = first([
+                '[data-testid="context-item-link"]',
+                'a[href*="/track/"]',
+                '[data-testid="now-playing-widget"] a[href*="/track/"]'
+            ], widget);
+            const songTitle = text(titleElement);
+            if (!songTitle) return 'NOT_PLAYING';
+
+            const artistElements = all([
+                '[data-testid="context-item-info-subtitle"] a',
+                'a[href*="/artist/"]'
+            ], widget).filter((element) => !element.href || !element.href.includes('/track/'));
+            const artistName = [...new Set(artistElements.map(text).filter(Boolean))].join(', ');
+
+            const elapsedText = text(first(['[data-testid="playback-position"]']));
+            const durationText = text(first(['[data-testid="playback-duration"]']));
+            let elapsed = timeToSeconds(elapsedText);
+            let duration = timeToSeconds(durationText);
+
+            const slider = first([
+                '[data-testid="playback-progressbar"] [role="slider"]',
+                '[role="slider"][aria-valuenow][aria-valuemax]'
+            ]);
+            if ((!elapsed || !duration) && slider) {
+                const valueNow = Number(slider.getAttribute('aria-valuenow'));
+                const valueMax = Number(slider.getAttribute('aria-valuemax'));
+                if (Number.isFinite(valueNow) && valueNow > 0) elapsed = valueNow;
+                if (Number.isFinite(valueMax) && valueMax > 0) duration = valueMax;
+            }
+
+            const artworkImg = first([
+                '[data-testid="now-playing-widget"] img[src]',
+                '[data-testid="cover-art-image"] img[src]',
+                'img[src*="i.scdn.co/image"]'
+            ], widget) || first(['img[src*="i.scdn.co/image"]']);
+            const artworkURL = artworkImg ? artworkImg.src : '';
+            
+            return JSON.stringify({
+                isPlaying: isPlaying,
+                songTitle: songTitle,
+                artist: artistName,
+                elapsed: elapsed,
+                duration: duration,
+                artworkURL: artworkURL
+            });
+        })();
+        """
+
+        guard let jsonString = executeJavaScriptOnSpotifyTab(jsScript),
+              jsonString != "ERROR",
+              jsonString != "NOT_PLAYING",
+              let jsonData = jsonString.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let title = json["songTitle"] as? String, !title.isEmpty else {
+            return nil
+        }
+        
+        return MediaCandidate(
+            app: "SpotifyWeb",
+            songTitle: title,
+            artist: (json["artist"] as? String) ?? "Spotify",
+            isPlaying: (json["isPlaying"] as? Bool) ?? false,
+            elapsed: (json["elapsed"] as? Double) ?? 0,
+            duration: (json["duration"] as? Double) ?? 0,
+            artworkURL: json["artworkURL"] as? String,
+            artworkImage: nil
+        )
+    }
+    
+    private func checkYouTubeCandidate() -> MediaCandidate? {
+        let jsScript = """
+        (function() {
+            var v = document.querySelector('video');
+            if (!v) return 'NOT_PLAYING';
+            
+            var isPlaying = !v.paused && !v.ended && v.readyState > 2 && v.currentTime > 0;
+            
+            var titleElem = document.querySelector('.ytmusic-player-bar .title, yt-formatted-string.title, h1.ytd-watch-metadata, #title h1, h1.title');
+            var artistElem = document.querySelector('.ytmusic-player-bar .byline, ytd-channel-name #text, #channel-name #text, #owner-name a, #text.ytd-channel-name');
+            
+            var title = titleElem ? titleElem.textContent.trim() : document.title.replace(' - YouTube Music', '').replace(' - YouTube', '').trim();
+            var artist = artistElem ? artistElem.textContent.trim() : 'YouTube Music';
+            
+            var artworkImg = document.querySelector('.ytmusic-player-bar img[src], ytd-watch-flexy img[src*="ytimg.com"], img[src*="ggpht.com"], img[src*="googleusercontent.com"]');
+            var artworkURL = artworkImg ? artworkImg.src : '';
+            
+            return JSON.stringify({
+                isPlaying: isPlaying,
+                songTitle: title,
+                artist: artist,
+                elapsed: v.currentTime || 0,
+                duration: isFinite(v.duration) ? v.duration : 0,
+                artworkURL: artworkURL
+            });
+        })();
+        """
+
+        guard let jsonString = executeJavaScriptOnYouTubeTab(jsScript),
+              jsonString != "ERROR",
+              jsonString != "NOT_PLAYING",
+              let jsonData = jsonString.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let title = json["songTitle"] as? String, !title.isEmpty else {
+            return nil
+        }
+        
+        return MediaCandidate(
+            app: "YouTubeMusic",
+            songTitle: title,
+            artist: (json["artist"] as? String) ?? "YouTube",
+            isPlaying: (json["isPlaying"] as? Bool) ?? false,
+            elapsed: (json["elapsed"] as? Double) ?? 0,
+            duration: (json["duration"] as? Double) ?? 0,
+            artworkURL: json["artworkURL"] as? String,
+            artworkImage: nil
+        )
+    }
+    
+    private func checkBrowserTabsCandidate() -> MediaCandidate? {
+        let script = """
+        tell application "System Events"
+            set chromeRunning to (name of processes) contains "Google Chrome"
+            set braveRunning to (name of processes) contains "Brave Browser"
             set safariRunning to (name of processes) contains "Safari"
         end tell
         
-        if safariRunning then
-            tell application "Safari"
+        if chromeRunning then
+            tell application "Google Chrome"
                 try
                     repeat with w in windows
                         repeat with t in tabs of w
                             set tabURL to URL of t
-                            if tabURL contains "music.youtube.com" or tabURL contains "youtube.com/watch" or tabURL contains "spotify.com" or tabURL contains "soundcloud.com" or tabURL contains "music.apple.com" then
-                                set tabName to name of t
-                                if tabName is not "" and tabName is not "YouTube Music" and tabName is not "YouTube" and tabName is not "Spotify" then
-                                    return tabName & "|||BROWSER|||SAFARI|||" & tabURL
+                            if tabURL contains "music.youtube.com" or tabURL contains "youtube.com" or tabURL contains "soundcloud.com" or tabURL contains "music.apple.com" or tabURL contains "spotify.com" then
+                                set tabTitle to title of t
+                                set isAudible to audible of t
+                                if tabTitle is not "" and tabTitle is not "YouTube Music" and tabTitle is not "YouTube" and tabTitle is not "Spotify" then
+                                    return tabTitle & "|||BROWSER|||Chrome|||" & tabURL & "|||" & (isAudible as text)
                                 end if
                             end if
                         end repeat
@@ -103,28 +420,99 @@ class MusicPlayerController: ObservableObject {
                 end try
             end tell
         end if
+        
+        if braveRunning then
+            tell application "Brave Browser"
+                try
+                    repeat with w in windows
+                        repeat with t in tabs of w
+                            set tabURL to URL of t
+                            if tabURL contains "music.youtube.com" or tabURL contains "youtube.com" or tabURL contains "spotify.com" or tabURL contains "soundcloud.com" or tabURL contains "music.apple.com" then
+                                set tabTitle to title of t
+                                set isAudible to audible of t
+                                if tabTitle is not "" and tabTitle is not "YouTube Music" and tabTitle is not "YouTube" and tabTitle is not "Spotify" then
+                                    return tabTitle & "|||BROWSER|||Brave|||" & tabURL & "|||" & (isAudible as text)
+                                end if
+                            end if
+                        end repeat
+                    end repeat
+                end try
+            end tell
+        end if
+        
         return "NOT_PLAYING"
         """
         
+        guard let appleScript = NSAppleScript(source: script) else { return nil }
+        var error: NSDictionary?
+        let result = appleScript.executeAndReturnError(&error)
+        guard error == nil, let str = result.stringValue, str != "NOT_PLAYING" else { return nil }
+        
+        let parts = str.components(separatedBy: "|||")
+        guard parts.count >= 2 else { return nil }
+        
+        var fullTitle = parts[0]
+        let suffixes = [" - YouTube", " - YouTube Music", " - Spotify", " - SoundCloud", " - Apple Music", " - Music", " on Vimeo"]
+        for suffix in suffixes {
+            if fullTitle.hasSuffix(suffix) {
+                fullTitle = String(fullTitle.dropLast(suffix.count)).trimmingCharacters(in: .whitespaces)
+                break
+            }
+        }
+        
+        var title = fullTitle
+        var artist = "Web Player"
+        if fullTitle.contains(" - ") {
+            let split = fullTitle.components(separatedBy: " - ")
+            if split.count >= 2 {
+                artist = split[0].trimmingCharacters(in: .whitespaces)
+                title = split[1].trimmingCharacters(in: .whitespaces)
+            }
+        }
+        
+        let isAudible = parts.count >= 5 ? (parts[4].lowercased() == "true") : false
+        let appName = parts.count >= 3 ? parts[2] : "Web Player"
+        let tabURL = parts.count >= 4 ? parts[3] : ""
+        
+        var artURL: String? = nil
+        if let videoID = extractYouTubeVideoID(from: tabURL) {
+            artURL = "https://i.ytimg.com/vi/\(videoID)/mqdefault.jpg"
+        }
+        
+        return MediaCandidate(
+            app: appName,
+            songTitle: title,
+            artist: artist,
+            isPlaying: isAudible,
+            elapsed: 0,
+            duration: 0,
+            artworkURL: artURL,
+            artworkImage: nil
+        )
+    }
+    
+    private func getArtworkImageFromMusic() -> NSImage? {
+        let script = """
+        tell application "Music"
+            if player state is not stopped then
+                try
+                    set currentArtwork to data of artwork 1 of current track
+                    return currentArtwork
+                end try
+            end if
+        end tell
+        """
         if let appleScript = NSAppleScript(source: script) {
             var error: NSDictionary?
             let result = appleScript.executeAndReturnError(&error)
-            
-            if error == nil, let resultString = result.stringValue, resultString != "NOT_PLAYING" {
-                DispatchQueue.main.async { [weak self] in
-                    self?.currentApp = "Safari"
-                    self?.parseBrowserInfo(resultString)
+            if error == nil, let descriptor = result.coerce(toDescriptorType: typeType) ?? Optional(result) {
+                let data = descriptor.data
+                if !data.isEmpty, let img = NSImage(data: data) {
+                    return img
                 }
-                return true
             }
         }
-        return false
-    }
-    
-    private func tryChrome() -> Bool {
-        if trySpotifyWeb() { return true }
-        if tryYouTubeWebChrome() { return true }
-        return tryBasicChrome()
+        return nil
     }
     
     private func trySpotifyWeb() -> Bool {
