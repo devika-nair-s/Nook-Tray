@@ -19,6 +19,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Create and show the Nook window
         setupNookWindow()
+        
+        // Listen for external "open settings" notification (for CLI / automation)
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(openSettings),
+            name: NSNotification.Name("com.nook.openSettings"),
+            object: nil
+        )
+        
+        // Auto-open settings on launch for demo
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.openSettings()
+        }
     }
     
     private func setupMenuBar() {
@@ -50,8 +63,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         
         menu.addItem(NSMenuItem(title: "Open Nook", action: #selector(openNook), keyEquivalent: "n"))
+        menu.addItem(NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "Quit Nook", action: #selector(quitApp), keyEquivalent: "q"))
         
         statusItem?.menu = menu
     }
@@ -64,6 +78,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func openNook() {
         nookWindow?.expand()
         nookWindow?.orderFrontRegardless()
+    }
+    
+    @objc private func openSettings() {
+        SettingsWindowController.shared.showSettings()
     }
     
     @objc private func quitApp() {

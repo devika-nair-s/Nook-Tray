@@ -9,6 +9,16 @@ class MusicPlayerController: ObservableObject {
     @Published var duration: Double = 0.0
     @Published var elapsedTime: Double = 0.0
     
+    var formattedMediaSource: String {
+        switch currentApp {
+        case "Music": return "Apple Music"
+        case "Spotify", "SpotifyWeb": return "Spotify"
+        case "Safari": return "YouTube Music"
+        case "Chrome", "Brave": return "YouTube Music"
+        default: return currentApp.isEmpty ? "Media Player" : currentApp
+        }
+    }
+    
     private var updateTimer: Timer?
     private var progressTimer: Timer?
     private var currentApp: String = ""
@@ -134,6 +144,7 @@ class MusicPlayerController: ObservableObject {
         }
         
         if tabURL.contains("open.spotify.com") { return trySpotifyWeb() }
+        if tabURL.contains("music.youtube.com") || tabURL.contains("youtube.com") { return tryYouTubeWebChrome() }
         
         // Fallback to basic title parsing for other sites
         return tryBasicChrome()
@@ -241,6 +252,87 @@ class MusicPlayerController: ObservableObject {
         }
         
         return true
+    }
+    
+    private func tryYouTubeWebChrome() -> Bool {
+        let jsScript = """
+        (function() {
+            var v = document.querySelector('video');
+            if (!v) return 'NOT_PLAYING';
+            
+            var titleElem = document.querySelector('.ytmusic-player-bar .title, yt-formatted-string.title, h1.ytd-watch-metadata, #title h1');
+            var artistElem = document.querySelector('.ytmusic-player-bar .byline, ytd-channel-name #text, #channel-name #text, #owner-name a');
+            
+            var title = titleElem ? titleElem.textContent.trim() : document.title.replace(' - YouTube Music', '').replace(' - YouTube', '').trim();
+            var artist = artistElem ? artistElem.textContent.trim() : 'YouTube Music';
+            
+            var artworkImg = document.querySelector('.ytmusic-player-bar img[src], ytd-watch-flexy img[src*="ytimg.com"], img[src*="ggpht.com"], img[src*="googleusercontent.com"]');
+            var artworkURL = artworkImg ? artworkImg.src : '';
+            
+            return JSON.stringify({
+                isPlaying: !v.paused && !v.ended,
+                songTitle: title,
+                artist: artist,
+                elapsed: v.currentTime,
+                duration: isFinite(v.duration) ? v.duration : 0,
+                artworkURL: artworkURL
+            });
+        })();
+        """
+
+        guard let jsonString = executeJavaScriptOnYouTubeTab(jsScript),
+              jsonString != "ERROR",
+              jsonString != "NOT_PLAYING" else {
+            return false
+        }
+        
+        guard let jsonData = jsonString.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+            return false
+        }
+        
+        DispatchQueue.main.async { [weak self] in
+            self?.currentApp = "YouTubeMusic"
+            self?.parseSpotifyWebInfo(json)
+        }
+        
+        return true
+    }
+
+    private func executeJavaScriptOnYouTubeTab(_ javascript: String) -> String? {
+        let escapedJS = javascript
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: " ")
+
+        let script = """
+        tell application "System Events"
+            set chromeRunning to (name of processes) contains "Google Chrome"
+        end tell
+
+        if chromeRunning then
+            tell application "/Applications/Google Chrome.app"
+                try
+                    repeat with windowIndex from 1 to count of windows
+                        repeat with tabIndex from 1 to count of tabs of window windowIndex
+                            set tabURL to URL of tab tabIndex of window windowIndex
+                            if tabURL contains "music.youtube.com" or tabURL contains "youtube.com/watch" then
+                                return execute tab tabIndex of window windowIndex javascript "\(escapedJS)"
+                            end if
+                        end repeat
+                    end repeat
+                end try
+            end tell
+        end if
+
+        return "NOT_PLAYING"
+        """
+
+        guard let appleScript = NSAppleScript(source: script) else { return nil }
+        var error: NSDictionary?
+        let result = appleScript.executeAndReturnError(&error)
+        if error != nil { return nil }
+        return result.stringValue
     }
     
     private func tryBasicChrome() -> Bool {

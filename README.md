@@ -1,142 +1,164 @@
 # Nook 🎵
 
-Nook is a small macOS utility I built to make the MacBook notch a little more useful.
+Nook is a lightweight, native macOS utility built to turn the MacBook camera notch into a seamless, interactive music controller, live equalizer, and media hub.
 
-It sits around the camera notch and turns it into a compact music controller. Hover over it to see what's playing, check the artwork, or control playback without switching away from whatever you're doing.
+Built with **Swift, SwiftUI, AppKit, and Apple's MediaRemote framework**, Nook sits flush beneath the camera notch, expanding on hover and click to display live song metadata, real-time cover art, precise playback scrubbers, hardware-accelerated media controls, and Bluetooth headphone battery monitoring.
 
-I wanted something that felt like it belonged on macOS rather than another floating window sitting on top of it.
+---
 
-## What it does
+## ✨ What it does
 
-* Sits directly underneath the MacBook camera notch and adjusts to the display automatically.
-* Expands when you hover over it.
-* Shows the currently playing song, artist, and cover art.
-* Lets you play/pause and skip tracks.
-* Keeps the song information visible when playback is paused.
-* Can stay open when you want the controls accessible.
-* Clicking outside closes it again.
-* Runs quietly from the menu bar.
+### 3 Adaptive Display States
+* **🏝 Collapsed Notch Pill**: Rests flush beneath the MacBook camera space, showing mini album artwork and a live audio waveform indicator when music is playing.
+* **⚡ Hover Tray (240 × 35 px)**: Expanding on cursor proximity, it displays album art, track details, and an animated audio equalizer graph.
+* **🎛 Expanded Media Hub (360 × 180 px)**: Clicking the notch opens a full media card featuring 80 × 80 px high-res artwork, source badges (*Spotify, Apple Music, YouTube Music*), song title, artist name, interactive playback controls, and an accurate 60 FPS progress scrubber with live timestamps (`mm:ss`).
+* **🎧 Connected Bluetooth Headphone Battery Indicator**: Shows a live headphone icon right next to the playback controls which smoothly expands on click to reveal exact remaining battery percentage for any connected Bluetooth headset (AirPods, OnePlus Buds, Sony, Bose, Beats, etc.).
 
-The UI is intentionally simple — basically a black, rounded media bar that grows out of the notch when you need it.
+---
 
-## Media support
+### 🎨 Themes & Custom Color Accents
+* **Light & Dark Mode Support**:
+  * **Light Mode**: Crisp porcelain white surface with vibrant contrast elements.
+  * **Dark Mode**: Deep OLED obsidian surface with luminous accents.
+* **5 Curated Color Palettes**:
+  * ⚪ **Classic** *(Neutral High-Contrast: Jet Black in Light / Pure White in Dark)*
+  * 🔵 **Electric Blue** *(Vibrant Cyan-Blue)*
+  * 🟢 **Emerald Green** *(Fresh Mint-Emerald)*
+  * 🟠 **Sunset Amber** *(Warm Tangerine-Amber)*
+  * 🟣 **Neon Purple** *(Rich Violet-Purple)*
+* **High-Contrast Border**: Optional outline for maximum readability on bright or dynamic wallpapers.
 
-| Source                 | Play / Pause | Previous / Next | Cover Art |
-| ---------------------- | :----------: | :-------------: | :-------: |
-| YouTube Music          |       ✅      |        ✅        |     ✅     |
-| YouTube                |       ✅      |        ✅        |     ✅     |
-| Spotify                |       ✅      |        ✅        |     ✅     |
-| Apple Music            |       ✅      |        ✅        |     ✅     |
-| SoundCloud / Web Audio |       ✅      |        ✅        |     ✅     |
+---
 
-It can also work with media playing through browsers including Chrome, Safari, Brave, Arc, and Edge.
+### ⚙️ Native macOS Settings Window
+Designed to perfectly match macOS 13+ / 14+ System Settings styling (`NavigationSplitView`, grouped forms, classic traffic light window controls):
 
-## How it works
+#### 1. **General**
+* **Behaviour**:
+  * *Expand on hover* (ON/OFF)
+  * *Keep open when clicked* (ON/OFF)
+  * *Close when clicking outside* (ON/OFF)
+* **Interaction**:
+  * *Hover sensitivity* (Low / Medium / High detection threshold)
+  * *Animation speed* (0.5x – 2.0x transition timing)
 
-Nook is built entirely as a native macOS app using:
+#### 2. **Notch**
+* **Position & Alignment**:
+  * `[ ⬅️ Move Left ]`, `[ Center ]`, `[ ➡️ Move Right ]` nudge buttons.
+  * Real-time horizontal alignment slider (`-150px ... +150px`).
+* **Dimensions**:
+  * Real-time **Width Offset** (`-100px ... +100px`) and **Height Offset** (`-20px ... +40px`) sliders that dynamically adjust and center the notch live.
 
-* **Swift**
-* **SwiftUI**
-* **AppKit**
-* **MediaRemote**
-* **AppleScript / Apple Events** where needed
+#### 3. **Appearance**
+* Segmented **Light / Dark Mode** theme switcher.
+* Dynamic **Color Accent** swatch selector.
+* High-contrast border outline toggle.
 
-The main window is an `NSPanel`, which lets Nook behave more like a small system utility than a regular macOS window.
+#### 4. **Now Playing**
+* **Display**:
+  * *Show album artwork* (ON/OFF)
+  * *Show song title* (ON/OFF)
+  * *Show artist name* (ON/OFF)
+  * *Show playback progress* (ON/OFF)
+  * *Show media source* (ON/OFF)
+  * *Show waveform visualizer* (ON/OFF)
+* **Controls & Peripherals**:
+  * *Show playback controls* (ON/OFF)
+  * *Show Previous / Next* (ON/OFF)
+  * *Show Play / Pause* (ON/OFF)
+  * *Show headphone battery* (ON/OFF)
 
-The notch positioning is calculated dynamically using `NSScreen`, so the UI isn't tied to a particular MacBook resolution.
+---
 
-For media controls, Nook communicates with the macOS media system and uses browser automation where necessary for web players.
+## 🎧 Media Support
 
-Cover artwork is retrieved from the available media information, with fallbacks for browser-based players such as YouTube Music and Spotify Web Player.
+| Source | Play / Pause | Track Skip | Live Progress | Cover Art |
+| :--- | :---: | :---: | :---: | :---: |
+| **Spotify** (Desktop App & Web) | ✅ | ✅ | ✅ | ✅ |
+| **Apple Music** (Music.app) | ✅ | ✅ | ✅ | ✅ |
+| **YouTube Music** (`music.youtube.com`) | ✅ | ✅ | ✅ | ✅ |
+| **YouTube** (`youtube.com`) | ✅ | ✅ | ✅ | ✅ |
+| **SoundCloud & Web Audio** | ✅ | ✅ | ✅ | ✅ |
+| **Supported Browsers** | Google Chrome, Brave, Safari, Arc, Microsoft Edge |
 
-## Project structure
+---
+
+## 📁 Project Structure
 
 ```text
 Nook/
 ├── Nook/
-│   ├── NookApp.swift
-│   ├── AppDelegate.swift
-│   ├── NookWindow.swift
-│   ├── NookContentView.swift
-│   ├── ExpandedNookView.swift
-│   ├── MusicPlayerController.swift
-│   ├── MusicWidgetView.swift
-│   ├── NookTrackingView.swift
-│   ├── Info.plist
-│   ├── Nook.entitlements
+│   ├── NookApp.swift                  # Main app entry point
+│   ├── AppDelegate.swift              # Menu bar status item, lifecycle, notifications
+│   ├── AppSettings.swift              # Central reactive store for preferences & theming
+│   ├── BluetoothBatteryManager.swift  # Bluetooth audio peripheral battery tracker
+│   ├── SettingsView.swift             # Native macOS 13+ Settings interface
+│   ├── SettingsWindowController.swift # Settings NSWindow lifecycle & window controls
+│   ├── NookWindow.swift               # Floating panel, notch anchoring, Combine observers
+│   ├── NookContentView.swift          # Notch pill, hover tray, and expanded card UI
+│   ├── MusicPlayerController.swift    # MediaRemote bridge, AppleScript, YouTube/Spotify JS
+│   ├── NookTrackingView.swift         # NSTrackingArea mouse enter/exit tracker
+│   ├── Info.plist                     # App bundle configuration
+│   ├── Nook.entitlements              # Security & AppleScript entitlements
 │   └── Resources/
-│       ├── AppIcon.icns
-│       └── app_photo.jpg
-│
+│       ├── AppIcon.icns               # Multi-size macOS application icon
+│       └── app_photo.jpg              # App branding asset
 ├── build/
-│   └── Nook.app/
-│
-└── README.md
+│   └── Nook.app/                      # Compiled macOS Application Bundle
+└── README.md                          # Documentation
 ```
 
-## Running Nook
+---
 
-Nook can be built from the terminal using Apple's Swift compiler.
+## 🛠 How to Build & Run
 
-From the project directory:
+Nook can be built directly with Apple's `swiftc` compiler:
 
 ```bash
+# 1. Navigate to the project root
 cd Nook
-```
 
-Create the app bundle:
-
-```bash
-mkdir -p build/Nook.app/Contents/MacOS
-mkdir -p build/Nook.app/Contents/Resources
-```
-
-Copy the resources:
-
-```bash
+# 2. Prepare app bundle directories and assets
+mkdir -p build/Nook.app/Contents/MacOS build/Nook.app/Contents/Resources
 cp Nook/Info.plist build/Nook.app/Contents/
-cp Nook/Resources/AppIcon.icns build/Nook.app/Contents/Resources/
-cp Nook/Resources/app_photo.jpg build/Nook.app/Contents/Resources/
-```
+cp Nook/Resources/AppIcon.icns build/Nook.app/Contents/Resources/ 2>/dev/null || true
+cp Nook/Resources/app_photo.jpg build/Nook.app/Contents/Resources/ 2>/dev/null || true
 
-Compile:
-
-```bash
-swiftc -O -target arm64-apple-macos12.0 \
+# 3. Compile the Swift source files targeting macOS 13.0+
+swiftc -O -target arm64-apple-macos13.0 \
   -framework AppKit \
   -framework SwiftUI \
   -framework MediaPlayer \
+  -framework IOBluetooth \
   -o build/Nook.app/Contents/MacOS/Nook Nook/*.swift
-```
 
-Then launch:
-
-```bash
+# 4. Refresh bundle & launch
+touch build/Nook.app
+pkill -x "Nook" 2>/dev/null || true
 open build/Nook.app
 ```
 
-## Using it
+---
 
-Once Nook is running:
+## 💡 How to Use
 
-1. Look for the Nook icon in the menu bar.
-2. Move your cursor towards the notch.
-3. Hover over Nook to reveal the music controls.
-4. Use the playback buttons without leaving your current app.
-5. Click the music area if you want to keep it open.
-6. Click outside to dismiss it.
+1. **Launch Nook**: The app runs unobtrusively in your menu bar and anchors to the camera notch.
+2. **Hover**: Move your cursor near the notch to expand into the compact hover tray.
+3. **Expand**: Click the notch to lock open the full 360 × 180 px media card with scrubber, playback buttons, and headphone battery indicator.
+4. **Settings**: Click the menu bar icon and select **Settings...** (or press `⌘,`) to customize theming, colors, notch dimensions, position, and media controls.
+5. **Dismiss**: Click anywhere outside the tray or the top-right `✕` button.
 
-On the first run, macOS may ask for permission to let Nook interact with applications such as Chrome, Safari, or Spotify. This is needed for browser-based media control.
+---
 
-## Requirements
+## ⚙️ System Requirements
 
-* macOS 13 Ventura or later
-* Apple Silicon or Intel Mac
-* Designed primarily for MacBooks with a camera notch
+* **macOS Version**: macOS 13.0 (Ventura), macOS 14.0 (Sonoma), or later.
+* **Architecture**: Apple Silicon (M1/M2/M3/M4) and Intel Macs supported.
+* **Permissions**: Standard Automation permission prompt on first launch to detect music playback.
 
-On displays without a notch, Nook falls back to a suitable position near the top of the screen.
+---
 
-## Why I made it
+## 💭 Why I made it
 
 I was experimenting with different Mac utilities and came across a similar app that used the notch as an interactive space. I really liked the idea and how naturally it fit into the MacBook.
 

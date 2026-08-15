@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Combine
 
 class NookWindow: NSPanel {
     private var hostingView: NSHostingView<AnyView>?
@@ -10,16 +11,40 @@ class NookWindow: NSPanel {
     private var localClickMonitor: Any?
     private var globalClickMonitor: Any?
     private let musicController = MusicPlayerController()
+    private var cancellables = Set<AnyCancellable>()
     
-    // Widths
-    private let collapsedWidth: CGFloat = 160
-    private let hoverWidth: CGFloat = 220
-    private let fullExpandedWidth: CGFloat = 220
+    // Base Sizes (will be dynamically adjusted by AppSettings tuning)
+    private var baseCollapsedWidth: CGFloat = 88
+    private var baseHoverWidth: CGFloat = 240
+    private var baseFullExpandedWidth: CGFloat = 360
     
-    // Heights
-    private let collapsedHeight: CGFloat = 6
-    private let hoverHeight: CGFloat = 44
-    private let fullExpandedHeight: CGFloat = 44
+    private var baseCollapsedHeight: CGFloat = 18
+    private var baseHoverHeight: CGFloat = 35
+    private var baseFullExpandedHeight: CGFloat = 180
+    
+    private var currentCollapsedWidth: CGFloat {
+        max(60, baseCollapsedWidth + CGFloat(AppSettings.shared.notchWidthOffset))
+    }
+    
+    private var currentCollapsedHeight: CGFloat {
+        max(12, baseCollapsedHeight + CGFloat(AppSettings.shared.notchHeightOffset))
+    }
+    
+    private var currentHoverWidth: CGFloat {
+        max(100, baseHoverWidth + CGFloat(AppSettings.shared.notchWidthOffset))
+    }
+    
+    private var currentHoverHeight: CGFloat {
+        max(24, baseHoverHeight + CGFloat(AppSettings.shared.notchHeightOffset))
+    }
+    
+    private var currentFullExpandedWidth: CGFloat {
+        max(200, baseFullExpandedWidth + CGFloat(AppSettings.shared.notchWidthOffset))
+    }
+    
+    private var currentFullExpandedHeight: CGFloat {
+        max(100, baseFullExpandedHeight + CGFloat(AppSettings.shared.notchHeightOffset))
+    }
     
     init() {
         super.init(
@@ -34,10 +59,21 @@ class NookWindow: NSPanel {
         setupContent()
         setupBackdrop()
         setupScreenNotifications()
+        setupSettingsObservation()
     }
     
     private var targetScreen: NSScreen? {
         return NSScreen.screens.first ?? NSScreen.main
+    }
+    
+    private func setupSettingsObservation() {
+        Publishers.CombineLatest3(AppSettings.shared.$notchXOffset, AppSettings.shared.$notchWidthOffset, AppSettings.shared.$notchHeightOffset)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _, _, _ in
+                guard let self = self else { return }
+                self.updateFrameForCurrentState()
+            }
+            .store(in: &cancellables)
     }
     
     private func setupScreenNotifications() {
@@ -46,16 +82,16 @@ class NookWindow: NSPanel {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.positionUnderCamera()
+            self?.updateFrameForCurrentState()
         }
     }
     
     private func setupWindow() {
-        level = .floating
+        level = .popUpMenu
         backgroundColor = .clear
         isOpaque = false
         hasShadow = false
-        collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         
         isMovable = false
         isMovableByWindowBackground = false
@@ -64,17 +100,34 @@ class NookWindow: NSPanel {
     }
     
     private func positionUnderCamera() {
+        updateFrameForCurrentState()
+    }
+    
+    func updateFrameForCurrentState() {
         guard let screen = targetScreen else { return }
         
         let screenFrame = screen.frame
-        let visibleFrame = screen.visibleFrame
-        let centerX = screenFrame.midX
+        let screenCenterX = screenFrame.midX
+        let topY = screenFrame.maxY
         
-        // Exact mathematical center of the physical display
-        let x = round(centerX - (collapsedWidth / 2.0))
-        let y = visibleFrame.maxY - collapsedHeight
+        let targetWidth: CGFloat
+        let targetHeight: CGFloat
         
-        setFrame(NSRect(x: x, y: y, width: collapsedWidth, height: collapsedHeight), display: true)
+        if isLocked {
+            targetWidth = currentFullExpandedWidth
+            targetHeight = currentFullExpandedHeight
+        } else if isExpanded {
+            targetWidth = currentHoverWidth
+            targetHeight = currentHoverHeight
+        } else {
+            targetWidth = currentCollapsedWidth
+            targetHeight = currentCollapsedHeight
+        }
+        
+        let x = round(screenCenterX - (targetWidth / 2.0) + CGFloat(AppSettings.shared.notchXOffset))
+        let y = topY - targetHeight
+        
+        setFrame(NSRect(x: x, y: y, width: targetWidth, height: targetHeight), display: true)
     }
     
     private func setupContent() {
@@ -109,11 +162,42 @@ class NookWindow: NSPanel {
             trackingView.addSubview(hostingView)
             self.contentView = trackingView
         }
+        
+        setupHoverDetection()
+    }
+    
+    private var hoverTimer: Timer?
+    
+    private func setupHoverDetection() {
+        hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            self?.checkMouseHover()
+        }
+    }
+    
+    private func checkMouseHover() {
+        guard !isLocked, !isExpanded, AppSettings.shared.expandOnHover else { return }
+        guard let screen = targetScreen else { return }
+        
+        let mouseLoc = NSEvent.mouseLocation
+        let screenFrame = screen.frame
+        let centerX = screenFrame.midX
+        let topY = screenFrame.maxY
+        
+        // Dynamic detection area based on hoverSensitivity and notchXOffset
+        let sensitivity = max(0.5, min(3.0, AppSettings.shared.hoverSensitivity))
+        let notchWidth: CGFloat = 60 + (CGFloat(sensitivity) * 120)
+        let notchHeight: CGFloat = 15 + (CGFloat(sensitivity) * 15)
+        let notchRect = NSRect(x: centerX - (notchWidth / 2.0) + CGFloat(AppSettings.shared.notchXOffset), y: topY - notchHeight, width: notchWidth, height: notchHeight)
+        
+        if notchRect.contains(mouseLoc) {
+            animateHover(expand: true)
+        }
     }
     
     private func setupBackdrop() {
         let backdrop = NookBackdropWindow()
         backdrop.onClickOutside = { [weak self] in
+            guard AppSettings.shared.closeWhenClickingOutside else { return }
             self?.unlockAndCollapse()
         }
         self.backdropWindow = backdrop
@@ -121,47 +205,56 @@ class NookWindow: NSPanel {
     
     private func handleMouseEntered() {
         guard !isLocked else { return }
-        animateHover(expand: true)
+        if AppSettings.shared.expandOnHover {
+            animateHover(expand: true)
+        }
     }
     
     private func handleMouseExited() {
         guard !isLocked else { return }
-        animateHover(expand: false)
+        if AppSettings.shared.expandOnHover {
+            animateHover(expand: false)
+        }
     }
     
     private func handleMouseClicked() {
-        if !isLocked {
-            isLocked = true
+        if AppSettings.shared.keepOpenWhenClicked {
+            if !isLocked {
+                isLocked = true
+                animateHover(expand: true)
+                showBackdrop()
+            }
+        } else {
+            isLocked = false
             animateHover(expand: true)
-            showBackdrop()
         }
     }
     
     private func animateHover(expand: Bool) {
         guard let screen = targetScreen else { return }
         let screenFrame = screen.frame
-        let visibleFrame = screen.visibleFrame
         let screenCenterX = screenFrame.midX
-        let topY = visibleFrame.maxY // Exactly at the bottom edge of the camera space
+        let topY = screenFrame.maxY
         
         isExpanded = expand
         
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.22
+            let speed = max(0.2, min(3.0, AppSettings.shared.animationSpeed))
+            context.duration = 0.22 / speed
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             
             var newFrame = frame
             if expand {
-                let targetWidth: CGFloat = isLocked ? fullExpandedWidth : hoverWidth
-                let targetHeight: CGFloat = isLocked ? fullExpandedHeight : hoverHeight
+                let targetWidth: CGFloat = isLocked ? currentFullExpandedWidth : currentHoverWidth
+                let targetHeight: CGFloat = isLocked ? currentFullExpandedHeight : currentHoverHeight
                 
                 newFrame.size = NSSize(width: targetWidth, height: targetHeight)
-                newFrame.origin.x = round(screenCenterX - (targetWidth / 2.0))
+                newFrame.origin.x = round(screenCenterX - (targetWidth / 2.0) + CGFloat(AppSettings.shared.notchXOffset))
                 newFrame.origin.y = topY - targetHeight
             } else {
-                newFrame.size = NSSize(width: collapsedWidth, height: collapsedHeight)
-                newFrame.origin.x = round(screenCenterX - (collapsedWidth / 2.0))
-                newFrame.origin.y = topY - collapsedHeight
+                newFrame.size = NSSize(width: currentCollapsedWidth, height: currentCollapsedHeight)
+                newFrame.origin.x = round(screenCenterX - (currentCollapsedWidth / 2.0) + CGFloat(AppSettings.shared.notchXOffset))
+                newFrame.origin.y = topY - currentCollapsedHeight
             }
             
             animator().setFrame(newFrame, display: true)
@@ -177,6 +270,7 @@ class NookWindow: NSPanel {
         removeEventMonitors()
         globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             guard let self = self else { return }
+            guard AppSettings.shared.closeWhenClickingOutside else { return }
             let mouseLocation = NSEvent.mouseLocation
             if !self.frame.contains(mouseLocation) {
                 DispatchQueue.main.async {
@@ -187,6 +281,7 @@ class NookWindow: NSPanel {
         
         localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
             guard let self = self else { return event }
+            guard AppSettings.shared.closeWhenClickingOutside else { return event }
             let mouseLocation = NSEvent.mouseLocation
             if !self.frame.contains(mouseLocation) {
                 DispatchQueue.main.async {
@@ -222,10 +317,15 @@ class NookWindow: NSPanel {
     }
     
     private func animateExpansion() {
-        if !isLocked {
-            isLocked = true
+        if AppSettings.shared.keepOpenWhenClicked {
+            if !isLocked {
+                isLocked = true
+                animateHover(expand: true)
+                showBackdrop()
+            }
+        } else {
+            isLocked = false
             animateHover(expand: true)
-            showBackdrop()
         }
     }
     
@@ -265,7 +365,7 @@ class NookBackdropWindow: NSPanel {
             backing: .buffered,
             defer: false
         )
-        level = .floating - 1
+        level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue - 1)
         backgroundColor = .clear
         isOpaque = false
         hasShadow = false
