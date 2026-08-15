@@ -122,36 +122,8 @@ class MusicPlayerController: ObservableObject {
     }
     
     private func tryChrome() -> Bool {
-        // First check if Chrome is running and on a music site
-        let checkScript = """
-        tell application "System Events"
-            set chromeRunning to (name of processes) contains "Google Chrome"
-        end tell
-        
-        if chromeRunning then
-            tell application "/Applications/Google Chrome.app"
-                try
-                    set currentTab to active tab of front window
-                    set tabURL to URL of currentTab
-                    return tabURL
-                end try
-            end tell
-        end if
-        return "NOT_RUNNING"
-        """
-        
-        guard let checkAppleScript = NSAppleScript(source: checkScript) else { return false }
-        var error: NSDictionary?
-        let checkResult = checkAppleScript.executeAndReturnError(&error)
-        
-        guard error == nil, let tabURL = checkResult.stringValue, tabURL != "NOT_RUNNING" else {
-            return false
-        }
-        
-        if tabURL.contains("open.spotify.com") { return trySpotifyWeb() }
-        if tabURL.contains("music.youtube.com") || tabURL.contains("youtube.com") { return tryYouTubeWebChrome() }
-        
-        // Fallback to basic title parsing for other sites
+        if trySpotifyWeb() { return true }
+        if tryYouTubeWebChrome() { return true }
         return tryBasicChrome()
     }
     
@@ -321,8 +293,11 @@ class MusicPlayerController: ObservableObject {
                     repeat with windowIndex from 1 to count of windows
                         repeat with tabIndex from 1 to count of tabs of window windowIndex
                             set tabURL to URL of tab tabIndex of window windowIndex
-                            if tabURL contains "music.youtube.com" or tabURL contains "youtube.com/watch" then
-                                return execute tab tabIndex of window windowIndex javascript "\(escapedJS)"
+                            if tabURL contains "music.youtube.com" or tabURL contains "youtube.com" then
+                                set res to execute tab tabIndex of window windowIndex javascript "\(escapedJS)"
+                                if res is not "NOT_PLAYING" and res is not "ERROR" and res is not missing value and res is not "" then
+                                    return res
+                                end if
                             end if
                         end repeat
                     end repeat
@@ -352,10 +327,11 @@ class MusicPlayerController: ObservableObject {
                     repeat with w in windows
                         repeat with t in tabs of w
                             set tabURL to URL of t
-                            if tabURL contains "music.youtube.com" or tabURL contains "youtube.com/watch" or tabURL contains "soundcloud.com" or tabURL contains "music.apple.com" or tabURL contains "spotify.com" then
+                            if tabURL contains "music.youtube.com" or tabURL contains "youtube.com" or tabURL contains "soundcloud.com" or tabURL contains "music.apple.com" or tabURL contains "spotify.com" then
                                 set tabTitle to title of t
+                                set isAudible to audible of t
                                 if tabTitle is not "" and tabTitle is not "YouTube Music" and tabTitle is not "YouTube" and tabTitle is not "Spotify" then
-                                    return tabTitle & "|||BROWSER|||CHROME|||" & tabURL
+                                    return tabTitle & "|||BROWSER|||CHROME|||" & tabURL & "|||" & (isAudible as text)
                                 end if
                             end if
                         end repeat
@@ -393,10 +369,11 @@ class MusicPlayerController: ObservableObject {
                     repeat with w in windows
                         repeat with t in tabs of w
                             set tabURL to URL of t
-                            if tabURL contains "music.youtube.com" or tabURL contains "youtube.com/watch" or tabURL contains "spotify.com" or tabURL contains "soundcloud.com" or tabURL contains "music.apple.com" then
+                            if tabURL contains "music.youtube.com" or tabURL contains "youtube.com" or tabURL contains "spotify.com" or tabURL contains "soundcloud.com" or tabURL contains "music.apple.com" then
                                 set tabTitle to title of t
+                                set isAudible to audible of t
                                 if tabTitle is not "" and tabTitle is not "YouTube Music" and tabTitle is not "YouTube" and tabTitle is not "Spotify" then
-                                    return tabTitle & "|||BROWSER|||BRAVE|||" & tabURL
+                                    return tabTitle & "|||BROWSER|||BRAVE|||" & tabURL & "|||" & (isAudible as text)
                                 end if
                             end if
                         end repeat
@@ -541,14 +518,14 @@ class MusicPlayerController: ObservableObject {
         let newTitle = songTitle.isEmpty ? "Unknown" : songTitle
         let newArtist = artist.isEmpty ? "Web Player" : artist
         
-        if self.songTitle != newTitle {
-            self.songTitle = newTitle
-            self.artist = newArtist
-            self.isPlaying = true
+        self.songTitle = newTitle
+        self.artist = newArtist
+        
+        if components.count >= 5 {
+            let isAudible = components[4].trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "true"
+            self.isPlaying = isAudible
         } else {
-            self.songTitle = newTitle
-            self.artist = newArtist
-            // Preserve isPlaying state (paused or playing)
+            self.isPlaying = false
         }
         
         // For browsers, we can't get accurate progress
