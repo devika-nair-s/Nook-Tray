@@ -410,9 +410,14 @@ class MusicPlayerController: ObservableObject {
                             set tabURL to URL of t
                             if tabURL contains "music.youtube.com" or tabURL contains "youtube.com" or tabURL contains "soundcloud.com" or tabURL contains "music.apple.com" or tabURL contains "spotify.com" then
                                 set tabTitle to title of t
-                                set isAudible to audible of t
+                                set isAud to false
+                                try
+                                    set isAud to audible of t
+                                end try
+                                set audText to "false"
+                                if isAud then set audText to "true"
                                 if tabTitle is not "" and tabTitle is not "YouTube Music" and tabTitle is not "YouTube" and tabTitle is not "Spotify" then
-                                    return tabTitle & "|||BROWSER|||Chrome|||" & tabURL & "|||" & (isAudible as text)
+                                    return tabTitle & "|||BROWSER|||Chrome|||" & tabURL & "|||" & audText
                                 end if
                             end if
                         end repeat
@@ -429,9 +434,32 @@ class MusicPlayerController: ObservableObject {
                             set tabURL to URL of t
                             if tabURL contains "music.youtube.com" or tabURL contains "youtube.com" or tabURL contains "spotify.com" or tabURL contains "soundcloud.com" or tabURL contains "music.apple.com" then
                                 set tabTitle to title of t
-                                set isAudible to audible of t
+                                set isAud to false
+                                try
+                                    set isAud to audible of t
+                                end try
+                                set audText to "false"
+                                if isAud then set audText to "true"
                                 if tabTitle is not "" and tabTitle is not "YouTube Music" and tabTitle is not "YouTube" and tabTitle is not "Spotify" then
-                                    return tabTitle & "|||BROWSER|||Brave|||" & tabURL & "|||" & (isAudible as text)
+                                    return tabTitle & "|||BROWSER|||Brave|||" & tabURL & "|||" & audText
+                                end if
+                            end if
+                        end repeat
+                    end repeat
+                end try
+            end tell
+        end if
+        
+        if safariRunning then
+            tell application "Safari"
+                try
+                    repeat with w in windows
+                        repeat with t in tabs of w
+                            set tabURL to URL of t
+                            if tabURL contains "music.youtube.com" or tabURL contains "youtube.com" or tabURL contains "spotify.com" or tabURL contains "soundcloud.com" or tabURL contains "music.apple.com" then
+                                set tabTitle to name of t
+                                if tabTitle is not "" and tabTitle is not "YouTube Music" and tabTitle is not "YouTube" and tabTitle is not "Spotify" then
+                                    return tabTitle & "|||BROWSER|||Safari|||" & tabURL & "|||true"
                                 end if
                             end if
                         end repeat
