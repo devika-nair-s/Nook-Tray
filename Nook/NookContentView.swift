@@ -111,21 +111,21 @@ struct NotchWaveformEqualizer: View {
             }
         }
         .onAppear {
-            if isPlaying {
-                withAnimation(Animation.linear(duration: 0.8).repeatForever(autoreverses: true)) {
-                    phase = 1
-                }
-            }
+            updateAnimation(playing: isPlaying)
         }
         .onChange(of: isPlaying) { playing in
-            if playing {
-                withAnimation(Animation.linear(duration: 0.8).repeatForever(autoreverses: true)) {
-                    phase = 1
-                }
-            } else {
-                withAnimation {
-                    phase = 0
-                }
+            updateAnimation(playing: playing)
+        }
+    }
+    
+    private func updateAnimation(playing: Bool) {
+        if playing {
+            withAnimation(Animation.linear(duration: 0.75).repeatForever(autoreverses: true)) {
+                phase = 1
+            }
+        } else {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                phase = 0
             }
         }
     }
@@ -138,7 +138,7 @@ struct EqualizerBar: View {
     @ObservedObject private var settings = AppSettings.shared
     
     var height: CGFloat {
-        if !isPlaying { return 3 }
+        if !isPlaying { return 2.5 }
         let heights: [CGFloat] = [4, 10, 7, 12]
         let altHeights: [CGFloat] = [11, 5, 12, 4]
         return heights[index] + (altHeights[index] - heights[index]) * phase
@@ -146,9 +146,9 @@ struct EqualizerBar: View {
     
     var body: some View {
         RoundedRectangle(cornerRadius: 1)
-            .fill(settings.currentPrimaryColor)
-            .frame(width: 2, height: max(2, height))
-            .animation(.easeInOut(duration: 0.25 + Double(index) * 0.08).repeatForever(autoreverses: true), value: phase)
+            .fill(settings.currentPrimaryColor.opacity(isPlaying ? 1.0 : 0.45))
+            .frame(width: 2, height: max(2.5, height))
+            .animation(isPlaying ? .easeInOut(duration: 0.22 + Double(index) * 0.06).repeatForever(autoreverses: true) : .easeInOut(duration: 0.15), value: isPlaying ? phase : 0)
     }
 }
 

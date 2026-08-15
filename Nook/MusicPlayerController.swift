@@ -62,7 +62,12 @@ class MusicPlayerController: ObservableObject {
     }
     
     private func updateNowPlayingInfo() {
-        _ = trySpotifyWeb() || trySpotify() || tryMusic() || tryBrowsers()
+        let foundMedia = trySpotifyWeb() || trySpotify() || tryMusic() || tryBrowsers()
+        if !foundMedia {
+            DispatchQueue.main.async { [weak self] in
+                self?.isPlaying = false
+            }
+        }
     }
     
     private func tryBrowsers() -> Bool {
