@@ -38,15 +38,15 @@ enum AppAccentColor: String, CaseIterable, Identifiable {
     }
     
     func surfaceColor(isDark: Bool) -> Color {
-        return isDark ? Color.black : Color.white
+        return isDark ? Color(red: 0.03, green: 0.03, blue: 0.035) : Color.white
     }
     
     func controlBackground(isDark: Bool) -> Color {
-        return isDark ? Color.white.opacity(0.12) : Color.black.opacity(0.08)
+        return isDark ? Color(white: 0.15).opacity(0.85) : Color.black.opacity(0.08)
     }
     
     func outlineColor(isDark: Bool) -> Color {
-        return isDark ? Color.white.opacity(0.18) : Color.black.opacity(0.12)
+        return isDark ? Color.white.opacity(0.12) : Color.black.opacity(0.12)
     }
 }
 
