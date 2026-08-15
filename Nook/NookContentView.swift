@@ -348,8 +348,8 @@ struct NookUnifiedBarView: View {
                         
                         // Playback controls if enabled
                         if settings.showPlaybackControls {
-                            HStack {
-                                HStack(spacing: 16) {
+                            HStack(spacing: 12) {
+                                HStack(spacing: 14) {
                                     if settings.showPreviousNext {
                                         Button(action: { musicController.previousTrack() }) {
                                             Image(systemName: "backward.fill")
@@ -365,7 +365,7 @@ struct NookUnifiedBarView: View {
                                             Image(systemName: musicController.isPlaying ? "pause.fill" : "play.fill")
                                                 .font(.system(size: 15, weight: .bold))
                                                 .foregroundColor(settings.currentPrimaryColor)
-                                                .frame(width: 36, height: 36)
+                                                .frame(width: 34, height: 34)
                                                 .background(
                                                     Circle()
                                                         .fill(settings.currentControlBg)
@@ -385,13 +385,13 @@ struct NookUnifiedBarView: View {
                                     }
                                 }
                                 
-                                Spacer()
+                                Spacer(minLength: 4)
                                 
                                 if settings.showHeadphoneBattery {
                                     HeadphoneBatteryView(batteryManager: bluetoothManager)
                                 }
                             }
-                            .frame(maxWidth: 195)
+                            .frame(maxWidth: 220)
                         }
                     }
                     Spacer()
@@ -506,36 +506,41 @@ struct HeadphoneBatteryView: View {
                 isExpanded.toggle()
             }
         }) {
-            HStack(spacing: 5) {
+            HStack(spacing: 6) {
                 Image(systemName: "headphones")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(settings.currentPrimaryColor)
-                    .frame(width: 26, height: 26)
+                    .frame(width: 24, height: 24)
                     .background(
                         Circle()
                             .fill(settings.currentControlBg)
                     )
+                    .layoutPriority(1)
                 
                 if isExpanded {
                     HStack(spacing: 4) {
                         Image(systemName: batteryIcon(for: batteryManager.batteryPercentage ?? 100))
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundColor(batteryColor(for: batteryManager.batteryPercentage ?? 100))
+                            .layoutPriority(1)
                         
                         Text(displayBatteryText)
                             .font(.system(size: 11, weight: .bold, design: .rounded))
                             .foregroundColor(settings.currentPrimaryColor)
+                            .lineLimit(1)
+                            .layoutPriority(1)
                     }
-                    .padding(.trailing, 8)
+                    .padding(.trailing, 6)
                     .transition(.scale(scale: 0.85, anchor: .trailing).combined(with: .opacity))
                 }
             }
-            .padding(.trailing, isExpanded ? 2 : 0)
+            .padding(.trailing, isExpanded ? 4 : 0)
             .background(
                 Capsule()
                     .fill(isExpanded ? settings.currentControlBg : Color.clear)
             )
             .contentShape(Capsule())
+            .fixedSize(horizontal: true, vertical: true)
         }
         .buttonStyle(PlainButtonStyle())
         .help(batteryManager.isConnected ? (batteryManager.deviceName.isEmpty ? "Bluetooth Headset" : batteryManager.deviceName) : "No Bluetooth Headset Connected")
