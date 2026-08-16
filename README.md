@@ -2,17 +2,23 @@
 
 Nook is a lightweight, native macOS utility built to turn the MacBook camera notch into a seamless, interactive music controller, live equalizer, and media hub.
 
-Built with **Swift, SwiftUI, AppKit, and Apple's MediaRemote framework**, Nook sits flush beneath the camera notch, expanding on hover and click to display live song metadata, real-time cover art, precise playback scrubbers, hardware-accelerated media controls, and Bluetooth headphone battery monitoring.
+Built with **Swift, SwiftUI, AppKit, and Apple's MediaRemote framework**, Nook sits flush beneath the camera notch, expanding on hover and click to display live song metadata, real-time cover art, playback controls, hardware-accelerated media commands, and Bluetooth headphone battery monitoring.
 
 ---
 
 ## ✨ What it does
 
 ### 3 Adaptive Display States
-* **🏝 Collapsed Notch Pill**: Rests flush beneath the MacBook camera space, showing mini album artwork and a live audio waveform indicator when music is playing.
-* **⚡ Hover Tray (240 × 35 px)**: Expanding on cursor proximity, it displays album art, track details, and an animated audio equalizer graph.
-* **🎛 Expanded Media Hub (360 × 180 px)**: Clicking the notch opens a full media card featuring 80 × 80 px high-res artwork, source badges (*Spotify, Apple Music, YouTube Music*), song title, artist name, interactive playback controls, and an accurate 60 FPS progress scrubber with live timestamps (`mm:ss`).
+* **🏝 Collapsed Notch Pill**: Rests flush beneath the MacBook camera space, showing mini album artwork and a live audio waveform indicator when music is playing. Displays the Nook app icon when idle.
+* **⚡ Hover Tray (240 × 35 px)**: Expanding on cursor proximity, it displays album art, track details, and an animated audio equalizer graph — or "No Audio Playing" when idle.
+* **🎛 Expanded Media Hub (360 × 180 px)**: Clicking the notch opens a full media card featuring 80 × 80 px high-res artwork, source badges (*Spotify, Apple Music, YouTube Music*), song title, artist name, interactive playback controls, and live timestamps.
 * **🎧 Connected Bluetooth Headphone Battery Indicator**: Shows a live headphone icon right next to the playback controls which smoothly expands on click to reveal exact remaining battery percentage for any connected Bluetooth headset (AirPods, OnePlus Buds, Sony, Bose, Beats, etc.).
+
+### 🔊 Smart Audio Detection
+* **Automatic media detection**: Detects what's currently playing across Spotify, Apple Music, YouTube Music, YouTube, SoundCloud, and generic browser audio — and switches between sources dynamically.
+* **Idle state awareness**: When no audio is actively playing, Nook shows "No Audio Playing" instead of stale track info.
+* **Graceful wind-down**: After audio stops, the last-played track is shown for up to 60 seconds before clearing to the idle state.
+* **Album art lifecycle**: Album artwork updates immediately on track change (next/previous) and clears gracefully when idle.
 
 ---
 
@@ -102,7 +108,7 @@ Nook/
 │   ├── Nook.entitlements              # Security & AppleScript entitlements
 │   └── Resources/
 │       ├── AppIcon.icns               # Multi-size macOS application icon
-│       └── app_photo.jpg              # App branding asset
+│       └── app_icon.png               # Transparent app branding icon
 ├── build/
 │   └── Nook.app/                      # Compiled macOS Application Bundle
 └── README.md                          # Documentation
@@ -122,7 +128,7 @@ cd Nook
 mkdir -p build/Nook.app/Contents/MacOS build/Nook.app/Contents/Resources
 cp Nook/Info.plist build/Nook.app/Contents/
 cp Nook/Resources/AppIcon.icns build/Nook.app/Contents/Resources/ 2>/dev/null || true
-cp Nook/Resources/app_photo.jpg build/Nook.app/Contents/Resources/ 2>/dev/null || true
+cp Nook/Resources/app_icon.png build/Nook.app/Contents/Resources/ 2>/dev/null || true
 
 # 3. Compile the Swift source files targeting macOS 13.0+
 swiftc -O -target arm64-apple-macos13.0 \

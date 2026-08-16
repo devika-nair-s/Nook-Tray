@@ -40,6 +40,17 @@ struct NotchIslandCollapsedView: View {
     @ObservedObject private var settings = AppSettings.shared
     let onExpand: () -> Void
     
+    private var appPhoto: NSImage? {
+        if let path = Bundle.main.path(forResource: "app_icon", ofType: "png"),
+           let img = NSImage(contentsOfFile: path) {
+            return img
+        }
+        if let img = NSImage(named: "app_icon") ?? NSImage(named: "AppIcon") {
+            return img
+        }
+        return nil
+    }
+    
     var body: some View {
         ZStack {
             // Tray Background
@@ -55,13 +66,19 @@ struct NotchIslandCollapsedView: View {
                 )
                 .shadow(color: Color.black.opacity(settings.isDarkMode ? 0.5 : 0.35), radius: 4, x: 0, y: 2)
             
-            // Island Content (Album Art + Live Equalizer Waveform)
+            // Island Content (Album Art / App Icon + Live Equalizer Waveform)
             HStack(spacing: 8) {
                 if musicController.hasMedia {
-                    // Mini Artwork
+                    // Mini Artwork (Album Cover within 1 min of audio playing, else App Icon)
                     if settings.showAlbumArtwork {
-                        if let artwork = musicController.albumArtwork {
+                        if musicController.shouldShowAlbumCover, let artwork = musicController.albumArtwork {
                             Image(nsImage: artwork)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 14, height: 14)
+                                .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                        } else if let appIcon = appPhoto {
+                            Image(nsImage: appIcon)
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
                                 .frame(width: 14, height: 14)
@@ -102,53 +119,55 @@ struct NotchIslandCollapsedView: View {
 // MARK: - Animated Audio Waveform Equalizer
 struct NotchWaveformEqualizer: View {
     let isPlaying: Bool
-    @State private var phase: CGFloat = 0
     
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(0..<4, id: \.self) { index in
-                EqualizerBar(index: index, isPlaying: isPlaying, phase: phase)
-            }
-        }
-        .onAppear {
-            updateAnimation(playing: isPlaying)
-        }
-        .onChange(of: isPlaying) { playing in
-            updateAnimation(playing: playing)
-        }
-    }
-    
-    private func updateAnimation(playing: Bool) {
-        if playing {
-            withAnimation(Animation.linear(duration: 0.75).repeatForever(autoreverses: true)) {
-                phase = 1
+        if isPlaying {
+            TimelineView(.animation) { timeline in
+                let time = timeline.date.timeIntervalSinceReferenceDate
+                HStack(spacing: 2) {
+                    ForEach(0..<4, id: \.self) { index in
+                        LiveEqualizerBar(index: index, time: time)
+                    }
+                }
             }
         } else {
-            withAnimation(.easeInOut(duration: 0.15)) {
-                phase = 0
+            HStack(spacing: 2) {
+                ForEach(0..<4, id: \.self) { _ in
+                    StaticEqualizerBar()
+                }
             }
         }
     }
 }
 
-struct EqualizerBar: View {
+struct LiveEqualizerBar: View {
     let index: Int
-    let isPlaying: Bool
-    let phase: CGFloat
+    let time: Double
     @ObservedObject private var settings = AppSettings.shared
     
     var height: CGFloat {
-        if !isPlaying { return 2.5 }
-        let heights: [CGFloat] = [4, 10, 7, 12]
-        let altHeights: [CGFloat] = [11, 5, 12, 4]
-        return heights[index] + (altHeights[index] - heights[index]) * phase
+        let speed: Double = 6.0
+        let offset = Double(index) * 1.4
+        let wave = (sin(time * speed + offset) + 1.0) / 2.0 // normalized 0...1
+        let minH: CGFloat = 3.0
+        let maxH: CGFloat = index == 1 ? 12.0 : (index == 2 ? 10.0 : 8.0)
+        return minH + CGFloat(wave) * (maxH - minH)
     }
     
     var body: some View {
         RoundedRectangle(cornerRadius: 1)
-            .fill(settings.currentPrimaryColor.opacity(isPlaying ? 1.0 : 0.45))
-            .frame(width: 2, height: max(2.5, height))
-            .animation(isPlaying ? .easeInOut(duration: 0.22 + Double(index) * 0.06).repeatForever(autoreverses: true) : .easeInOut(duration: 0.15), value: isPlaying ? phase : 0)
+            .fill(settings.currentPrimaryColor)
+            .frame(width: 2, height: height)
+    }
+}
+
+struct StaticEqualizerBar: View {
+    @ObservedObject private var settings = AppSettings.shared
+    
+    var body: some View {
+        RoundedRectangle(cornerRadius: 1)
+            .fill(settings.currentPrimaryColor.opacity(0.35))
+            .frame(width: 2, height: 2.5)
     }
 }
 
@@ -157,6 +176,17 @@ struct NookHoverBarView: View {
     @ObservedObject var musicController: MusicPlayerController
     @ObservedObject private var settings = AppSettings.shared
     let onExpand: () -> Void
+    
+    private var appPhoto: NSImage? {
+        if let path = Bundle.main.path(forResource: "app_icon", ofType: "png"),
+           let img = NSImage(contentsOfFile: path) {
+            return img
+        }
+        if let img = NSImage(named: "app_icon") ?? NSImage(named: "AppIcon") {
+            return img
+        }
+        return nil
+    }
     
     var body: some View {
         ZStack {
@@ -171,8 +201,18 @@ struct NookHoverBarView: View {
             HStack(spacing: 8) {
                 if musicController.hasMedia {
                     if settings.showAlbumArtwork {
-                        if let artwork = musicController.albumArtwork {
+                        if musicController.shouldShowAlbumCover, let artwork = musicController.albumArtwork {
                             Image(nsImage: artwork)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 20, height: 20)
+                                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                        .stroke(settings.currentPrimaryColor.opacity(0.15), lineWidth: 0.5)
+                                )
+                        } else if let appIcon = appPhoto {
+                            Image(nsImage: appIcon)
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
                                 .frame(width: 20, height: 20)
@@ -203,7 +243,7 @@ struct NookHoverBarView: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(settings.currentPrimaryColor.opacity(0.8))
                     
-                    Text("Nook")
+                    Text("No Audio Playing")
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .foregroundColor(settings.currentPrimaryColor)
                         
@@ -231,11 +271,11 @@ struct NookUnifiedBarView: View {
     let onClose: () -> Void
     
     private var appPhoto: NSImage? {
-        if let path = Bundle.main.path(forResource: "app_photo", ofType: "jpg"),
+        if let path = Bundle.main.path(forResource: "app_icon", ofType: "png"),
            let img = NSImage(contentsOfFile: path) {
             return img
         }
-        if let img = NSImage(named: "app_photo") ?? NSImage(named: "AppIcon") {
+        if let img = NSImage(named: "app_icon") ?? NSImage(named: "AppIcon") {
             return img
         }
         return nil
@@ -257,11 +297,18 @@ struct NookUnifiedBarView: View {
             
             if musicController.hasMedia {
                 HStack(spacing: 20) {
-                    // Album art (80x80)
+                    // Album art (shown up to 1 min after audio stops) or App icon (80x80)
                     if settings.showAlbumArtwork {
                         Group {
-                            if let artwork = musicController.albumArtwork {
+                            if musicController.shouldShowAlbumCover, let artwork = musicController.albumArtwork {
                                 Image(nsImage: artwork)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: 80, height: 80)
+                                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                    .shadow(color: Color.black.opacity(settings.isDarkMode ? 0.4 : 0.15), radius: 8, x: 0, y: 4)
+                            } else if let appIcon = appPhoto {
+                                Image(nsImage: appIcon)
                                     .resizable()
                                     .aspectRatio(contentMode: .fill)
                                     .frame(width: 80, height: 80)
@@ -312,38 +359,6 @@ struct NookUnifiedBarView: View {
                                     .foregroundColor(settings.currentSecondaryColor)
                                     .lineLimit(1)
                             }
-                        }
-                        
-                        // Playback Progress Bar if enabled
-                        if settings.showPlaybackProgress {
-                            VStack(spacing: 3) {
-                                GeometryReader { geo in
-                                    ZStack(alignment: .leading) {
-                                        Capsule()
-                                            .fill(settings.currentControlBg)
-                                            .frame(height: 3.5)
-                                        Capsule()
-                                            .fill(settings.currentPrimaryColor)
-                                            .frame(width: max(3.5, min(geo.size.width, geo.size.width * CGFloat(musicController.playbackProgress))), height: 3.5)
-                                    }
-                                }
-                                .frame(height: 4)
-                                
-                                HStack {
-                                    Text(formatTime(musicController.elapsedTime))
-                                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                                        .foregroundColor(settings.currentSecondaryColor)
-                                    
-                                    Spacer()
-                                    
-                                    if musicController.duration > 0 {
-                                        Text(formatTime(musicController.duration))
-                                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                                            .foregroundColor(settings.currentSecondaryColor)
-                                    }
-                                }
-                            }
-                            .frame(maxWidth: 190)
                         }
                         
                         // Playback controls if enabled
@@ -412,7 +427,7 @@ struct NookUnifiedBarView: View {
                             .foregroundColor(settings.currentPrimaryColor.opacity(0.7))
                     }
                     
-                    Text("Nook")
+                    Text("No Audio Playing")
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .foregroundColor(settings.currentPrimaryColor)
                 }

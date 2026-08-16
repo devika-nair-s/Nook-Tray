@@ -8,6 +8,16 @@ class MusicPlayerController: ObservableObject {
     @Published var playbackProgress: Double = 0.0
     @Published var duration: Double = 0.0
     @Published var elapsedTime: Double = 0.0
+    @Published var lastAudioPlayingTime: Date? = nil
+    
+    var shouldShowAlbumCover: Bool {
+        guard albumArtwork != nil else { return false }
+        if isPlaying { return true }
+        if let lastPlay = lastAudioPlayingTime, Date().timeIntervalSince(lastPlay) < 60.0 {
+            return true
+        }
+        return false
+    }
     
     var formattedMediaSource: String {
         switch currentApp {
@@ -25,6 +35,8 @@ class MusicPlayerController: ObservableObject {
     private var lastUpdateTime: Date?
     private var lastKnownPosition: Double = 0.0
     private var lastArtworkURL: URL?
+    private var lastUserActionTime: Date?
+    private var isUserPaused = false
     
     init() {
         startMonitoring()
@@ -73,6 +85,11 @@ class MusicPlayerController: ObservableObject {
     }
     
     private func updateNowPlayingInfo() {
+        // If user recently clicked pause, don't let background poll instantly overwrite paused state
+        if isUserPaused, let actionTime = lastUserActionTime, Date().timeIntervalSince(actionTime) < 3.0 {
+            return
+        }
+        
         var candidates: [MediaCandidate] = []
         
         // 1. Check native Spotify Desktop
@@ -102,13 +119,27 @@ class MusicPlayerController: ObservableObject {
         
         // Prioritize whichever candidate is ACTUALLY PLAYING right now!
         if let activePlaying = candidates.first(where: { $0.isPlaying }) {
+            isUserPaused = false
             applyCandidate(activePlaying)
-        } else if let firstPaused = candidates.first(where: { !$0.songTitle.isEmpty }) {
-            // If all are paused, display the most recent or first available media in paused state
-            applyCandidate(firstPaused)
         } else {
-            DispatchQueue.main.async { [weak self] in
-                self?.isPlaying = false
+            // No candidate is actively playing. Decide whether to show a paused
+            // candidate or clear to "No Audio Playing" based on how long ago
+            // audio was last heard.
+            //   nil → audio never played this session → treat as stale (infinity)
+            let timeSinceLastAudio = self.lastAudioPlayingTime.map { Date().timeIntervalSince($0) } ?? Double.infinity
+            
+            if timeSinceLastAudio <= 60.0, let firstPaused = candidates.first(where: { !$0.songTitle.isEmpty }) {
+                // Audio stopped recently — keep showing the paused track briefly
+                applyCandidate(firstPaused)
+            } else {
+                // Stale or never played — clear everything so UI shows "No Audio Playing"
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    self.isPlaying = false
+                    self.songTitle = ""
+                    self.artist = ""
+                    self.albumArtwork = nil
+                }
             }
         }
     }
@@ -119,30 +150,41 @@ class MusicPlayerController: ObservableObject {
             self.currentApp = cand.app
             self.songTitle = cand.songTitle
             self.artist = cand.artist.isEmpty ? "Unknown Artist" : cand.artist
+            
+            let wasPlaying = self.isPlaying
             self.isPlaying = cand.isPlaying
+            
+            if cand.isPlaying {
+                self.lastAudioPlayingTime = Date()
+            } else if wasPlaying {
+                // Audio just transitioned from playing to stopped/paused
+                self.lastAudioPlayingTime = Date()
+            }
+            
+            // Check if 60 seconds have elapsed since audio stopped
+            if !self.isPlaying {
+                if let lastPlay = self.lastAudioPlayingTime, Date().timeIntervalSince(lastPlay) >= 60.0 {
+                    self.albumArtwork = nil
+                }
+            }
             
             if cand.duration > 0 {
                 self.duration = cand.duration
                 self.elapsedTime = cand.elapsed
                 self.lastKnownPosition = cand.elapsed
                 self.lastUpdateTime = Date()
-                self.playbackProgress = min(1.0, max(0.0, cand.elapsed / cand.duration))
             } else {
                 self.duration = 0
                 self.elapsedTime = 0
-                self.playbackProgress = 0
             }
             
             if let img = cand.artworkImage {
-                self.albumArtwork = img
+                if self.isPlaying || (self.lastAudioPlayingTime != nil && Date().timeIntervalSince(self.lastAudioPlayingTime!) < 60.0) {
+                    self.albumArtwork = img
+                }
             } else if let artStr = cand.artworkURL, !artStr.isEmpty, let artUrl = URL(string: artStr) {
-                self.downloadArtwork(from: artUrl)
-            } else if cand.app != "Music" && cand.artworkURL == nil {
-                // Try iTunes search fallback if no direct artwork
-                if let videoID = self.extractYouTubeVideoID(from: cand.artist) {
-                    if let thumbURL = URL(string: "https://i.ytimg.com/vi/\(videoID)/mqdefault.jpg") {
-                        self.downloadArtwork(from: thumbURL)
-                    }
+                if self.isPlaying || (self.lastAudioPlayingTime != nil && Date().timeIntervalSince(self.lastAudioPlayingTime!) < 60.0) {
+                    self.downloadArtwork(from: artUrl)
                 }
             }
         }
@@ -416,7 +458,7 @@ class MusicPlayerController: ObservableObject {
                                 end try
                                 set audText to "false"
                                 if isAud then set audText to "true"
-                                if tabTitle is not "" and tabTitle is not "YouTube Music" and tabTitle is not "YouTube" and tabTitle is not "Spotify" then
+                                if tabTitle is not "" and tabTitle is not "YouTube" and tabTitle is not "Spotify" then
                                     return tabTitle & "|||BROWSER|||Chrome|||" & tabURL & "|||" & audText
                                 end if
                             end if
@@ -440,7 +482,7 @@ class MusicPlayerController: ObservableObject {
                                 end try
                                 set audText to "false"
                                 if isAud then set audText to "true"
-                                if tabTitle is not "" and tabTitle is not "YouTube Music" and tabTitle is not "YouTube" and tabTitle is not "Spotify" then
+                                if tabTitle is not "" and tabTitle is not "YouTube" and tabTitle is not "Spotify" then
                                     return tabTitle & "|||BROWSER|||Brave|||" & tabURL & "|||" & audText
                                 end if
                             end if
@@ -458,7 +500,7 @@ class MusicPlayerController: ObservableObject {
                             set tabURL to URL of t
                             if tabURL contains "music.youtube.com" or tabURL contains "youtube.com" or tabURL contains "spotify.com" or tabURL contains "soundcloud.com" or tabURL contains "music.apple.com" then
                                 set tabTitle to name of t
-                                if tabTitle is not "" and tabTitle is not "YouTube Music" and tabTitle is not "YouTube" and tabTitle is not "Spotify" then
+                                if tabTitle is not "" and tabTitle is not "YouTube" and tabTitle is not "Spotify" then
                                     return tabTitle & "|||BROWSER|||Safari|||" & tabURL & "|||true"
                                 end if
                             end if
@@ -489,7 +531,7 @@ class MusicPlayerController: ObservableObject {
         }
         
         var title = fullTitle
-        var artist = "Web Player"
+        var artist = "YouTube Music"
         if fullTitle.contains(" - ") {
             let split = fullTitle.components(separatedBy: " - ")
             if split.count >= 2 {
@@ -512,17 +554,13 @@ class MusicPlayerController: ObservableObject {
             }
         }
         
-        // Use previous duration/elapsed if tracking same title
-        let currentDur = (self.songTitle == title && self.duration > 0) ? self.duration : (self.duration > 0 ? self.duration : 210.0)
-        let currentPos = (self.songTitle == title) ? self.elapsedTime : 0.0
-        
         return MediaCandidate(
             app: appName,
             songTitle: title,
             artist: artist,
             isPlaying: isAudible,
-            elapsed: currentPos,
-            duration: currentDur,
+            elapsed: 0,
+            duration: 0,
             artworkURL: artURL,
             artworkImage: nil
         )
@@ -1333,6 +1371,8 @@ class MusicPlayerController: ObservableObject {
     }
     
     func play() {
+        self.isUserPaused = false
+        self.lastUserActionTime = Date()
         DispatchQueue.main.async { [weak self] in
             self?.isPlaying = true
             self?.lastUpdateTime = Date()
@@ -1345,10 +1385,11 @@ class MusicPlayerController: ObservableObject {
         } else {
             executeUniversalBrowserCommand("play")
         }
-        sendMediaKey(16)
     }
     
     func pause() {
+        self.isUserPaused = true
+        self.lastUserActionTime = Date()
         DispatchQueue.main.async { [weak self] in
             self?.isPlaying = false
         }
@@ -1360,31 +1401,38 @@ class MusicPlayerController: ObservableObject {
         } else {
             executeUniversalBrowserCommand("pause")
         }
-        sendMediaKey(16)
     }
     
     func togglePlayPause() {
         let willBePlaying = !isPlaying
+        self.isUserPaused = !willBePlaying
+        self.lastUserActionTime = Date()
         DispatchQueue.main.async { [weak self] in
             self?.isPlaying = willBePlaying
             if willBePlaying {
                 self?.lastUpdateTime = Date()
             }
         }
-        MediaRemote.togglePlayPause()
-        if currentApp == "Music" || currentApp == "Spotify" {
-            executeCommand("playpause")
-        } else if currentApp == "SpotifyWeb" {
-            executeSpotifyWebCommand("playpause")
+        if willBePlaying {
+            MediaRemote.play()
         } else {
-            executeUniversalBrowserCommand("playpause")
+            MediaRemote.pause()
         }
-        sendMediaKey(16)
+        
+        let cmd = willBePlaying ? "play" : "pause"
+        if currentApp == "Music" || currentApp == "Spotify" {
+            executeCommand(cmd)
+        } else if currentApp == "SpotifyWeb" {
+            executeSpotifyWebCommand(cmd)
+        } else {
+            executeUniversalBrowserCommand(cmd)
+        }
     }
     
     func nextTrack() {
         DispatchQueue.main.async { [weak self] in
             self?.albumArtwork = nil
+            self?.lastArtworkURL = nil
         }
         MediaRemote.nextTrack()
         if currentApp == "Music" || currentApp == "Spotify" {
@@ -1401,6 +1449,7 @@ class MusicPlayerController: ObservableObject {
     func previousTrack() {
         DispatchQueue.main.async { [weak self] in
             self?.albumArtwork = nil
+            self?.lastArtworkURL = nil
         }
         MediaRemote.previousTrack()
         if currentApp == "Music" {
